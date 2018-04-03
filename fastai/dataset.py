@@ -288,6 +288,17 @@ class ArraysNhotDataset(ArraysDataset):
     @property
     def is_multi(self): return True
 
+class FilesIndexArrayMixUpDataset(FilesIndexArrayDataset):
+    def __init__(self, fnames, y, transform, path, mixup):
+        super().__init__(fnames, y, transform, path)
+        self.mixup = mixup
+
+    def get(self, transforms, x, y):
+        rand = random.randrange(self.get_n())
+        x2, y2 = self.get_x(rand), self.get_y(rand)
+        self.mixup([x,x2],[y,y2])
+        return super().get(transforms, x, y)
+
 
 class ModelData():
     def __init__(self, path, trn_dl, val_dl, test_dl=None):
@@ -447,6 +458,12 @@ class ImageClassifierData(ImageData):
         fnames,y,classes = csv_source(folder, csv_fname, skip_header, suffix, continuous=continuous)
         return cls.from_names_and_array(path, fnames, y, classes, val_idxs, test_name,
                 num_workers=num_workers, suffix=suffix, tfms=tfms, bs=bs, continuous=continuous)
+    @classmethod
+    def from_csv_mixup(cls, path, folder, csv_fname, bs=64, mixup_alpha=0.5, tfms=(None,None),
+               val_idxs=None, suffix='', test_name=None, skip_header=True, num_workers=8):
+        fnames,y,classes = csv_source(folder, csv_fname, skip_header, suffix)
+        return cls.from_names_and_array_include_mixup(path, fnames, y, classes, val_idxs, test_name, mixup_alpha=mixup_alpha,
+                num_workers=num_workers, suffix=suffix, tfms=tfms, bs=bs)
 
     @classmethod
     def from_names_and_array(cls, path, fnames,y,classes, val_idxs=None, test_name=None,
@@ -462,6 +479,17 @@ class ImageClassifierData(ImageData):
                                path=path, test=test_fnames)
         return cls(path, datasets, bs, num_workers, classes=classes)
 
+    @classmethod
+    def from_names_and_array_include_mixup(cls, path, fnames,y,classes, val_idxs=None, test_name=None, mixup_alpha=0.5,
+            num_workers=8, suffix='', tfms=(None,None), bs=64):
+        val_idxs = get_cv_idxs(len(fnames)) if val_idxs is None else val_idxs
+        ((val_fnames,trn_fnames),(val_y,trn_y)) = split_by_idx(val_idxs, np.array(fnames), y)
+        test_fnames = read_dir(path, test_name) if test_name else None
+        f = FilesIndexArrayMixUpDataset
+        datasets = cls.get_ds(f, (trn_fnames,trn_y), (val_fnames,val_y), tfms,
+                               path=path, test=test_fnames, mixup=Mixup(mixup_alpha))
+        return cls(path, datasets, bs, num_workers, classes=classes)
+    
 def split_by_idx(idxs, *a):
     """
     Split each array passed as *a, to a pair of arrays like this (elements selected by idxs,  the remaining elements)

@@ -445,7 +445,27 @@ class RandomZoom(CoordTransform):
 
     def do_transform(self, x, is_y):
         return zoom_cv(x, self.store.zoom)
-
+    
+class Mixup(Transform):
+    def __init__(self, alpha_max=0.5, tfm_y=TfmType.CLASS):
+        super().__init__(tfm_y)
+        self.alpha_max = alpha_max
+    
+    def set_state(self):
+        self.store.alpha = self.alpha_max#*random.random() # remember to put random back in!
+        
+    def do_transform(self, x, is_y=False):
+        if is_y:
+            return x[0]*(1-self.store.alpha) + x[1]*self.store.alpha
+        else:
+            x1,x2 = x[0], x[1]
+            min_shape = np.min(np.stack((x1.shape, x2.shape)), axis=0)
+            rand = np.random.random((min_shape[0], min_shape[1])) > self.store.alpha
+            coords = np.where(rand)
+            x1_copy = x1.copy()
+            x1_copy[:80:,80:] = 0 #x2[coords]
+            return x1_copy
+    
 class RandomStretch(CoordTransform):
     def __init__(self, max_stretch, tfm_y=TfmType.NO):
         super().__init__(tfm_y)
